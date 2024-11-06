@@ -1,39 +1,67 @@
 #!/bin/bash
+# Download the New York Times front page PDF for a specific date.
+# Usage examples:
+#   ./getNYTFrontPage.sh            # Download today's front page
+#   ./getNYTFrontPage.sh -d 1       # Download yesterday's front page
+#   ./getNYTFrontPage.sh -d 7       # Download front page from 7 days ago
+#   ./getNYTFrontPage.sh -y 1       # Download front page from one year ago
+#   ./getNYTFrontPage.sh -d 1 -y 2  # Download front page from 2 years and 1 day ago
 
-# Initialize the offsets
-day_offset=0
-year_offset=0
+# Default offset in days
+offset=0
 
 # Parse arguments
 while getopts "d:y:" opt; do
   case $opt in
-    d) 
-      day_offset=$OPTARG
+    d)
+      if ! [[ $OPTARG =~ ^[0-9]+$ ]]; then
+        echo "Error: -d requires a positive integer argument." >&2
+        exit 1
+      fi
+      ((offset += OPTARG))
       ;;
     y)
-      year_offset=$(($OPTARG * 365))
+      if ! [[ $OPTARG =~ ^[0-9]+$ ]]; then
+        echo "Error: -y requires a positive integer argument." >&2
+        exit 1
+      fi
+      ((offset += OPTARG * 365))
       ;;
     *)
-      echo "Invalid option: -$opt" >&2
+      echo "Invalid option: -$OPTARG" >&2
+      echo "Usage: $0 [-d days] [-y years]" >&2
       exit 1
       ;;
   esac
 done
 
-# Calculate the total offset in days
-offset=$(($day_offset + $year_offset))
+shift $((OPTIND -1))
+
+# Check for extra arguments
+if [ $# -gt 0 ]; then
+  echo "Invalid argument(s): $@" >&2
+  echo "Usage: $0 [-d days] [-y years]" >&2
+  exit 1
+fi
 
 # Calculate the target date
 if [ "$offset" -eq 0 ]; then
-  target_date=$(date +%Y-%m-%d)
+  target_date=$(date '+%Y-%m-%d')
 else
-  target_date=$(date -v-"$offset"d +%Y-%m-%d)
+  # Adjust date calculation for macOS and Linux
+  if date -v -1d &>/dev/null; then
+    # BSD date (macOS)
+    target_date=$(date -v-"$offset"d '+%Y-%m-%d')
+  else
+    # GNU date
+    target_date=$(date -d "-$offset days" '+%Y-%m-%d')
+  fi
 fi
 
 # Extract year, month, and day from the target date
-year=$(echo $target_date | cut -d'-' -f1)
-month=$(echo $target_date | cut -d'-' -f2)
-day=$(echo $target_date | cut -d'-' -f3)
+year=${target_date:0:4}
+month=${target_date:5:2}
+day=${target_date:8:2}
 
 echo "Downloading NYT front page for date: $year-$month-$day"
 
@@ -41,8 +69,11 @@ echo "Downloading NYT front page for date: $year-$month-$day"
 url="https://static01.nyt.com/images/$year/$month/$day/nytfrontpage/scan.pdf"
 output_file="NYTimes-FrontPage-$month-$day-$year.pdf"
 
-echo "curl $url --output $output_file"
-curl $url --output $output_file
+if curl -o "$output_file" "$url"; then
+  echo "Download successful."
+  open "$output_file"
+else
+  echo "Failed to download the file. The front page may not be available for the specified date."
+  exit 1
+fi
 
-# Open the downloaded PDF
-open $output_file
